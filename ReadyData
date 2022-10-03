@@ -1,0 +1,1594 @@
+#######################################################################
+# Project: BRFSS & ACA                                                #
+# Session: Ready Data                                                 #
+#                                                                     #
+# Input: SAS xport files (downloaded from CDC)                        #
+# Years: 2010, 2012, 2014, 2016, 2018, 2020                           #
+#                                                                     #
+# Output & Associated Files:                                          #
+# -ReadyData (My R Script Page)                                       #
+#######################################################################
+# Description: Ready data by harmonizing variables over years
+
+#..............................
+# Load packages, read files ####
+#..............................
+
+library(tidyverse)
+library(Hmisc)
+library(sas7bdat)
+library(survey)
+library(srvyr)
+library(tableone)
+
+setwd("~/Documents/PostDoc/ACA BRFSS/Data/ACA and BRFSS")
+dir()
+
+#download data from: https://www.cdc.gov/brfss/annual_data/annual_data.htm
+#load data (note, smaller datasets saved as .csv for easy load - see below)
+brfss20 <- sasxport.get("CDBRFS20.XPT")
+brfss18 <- sasxport.get("CDBRFS18.XPT")
+brfss16 <- sasxport.get("CDBRFS16.XPT")
+brfss14 <- sasxport.get("CDBRFS14.XPT")
+brfss12 <- sasxport.get("CDBRFS12.XPT")
+brfss10 <- sasxport.get("CDBRFS10.XPT")
+names(brfss20)
+names(brfss18)
+names(brfss16)
+names(brfss14)
+names(brfss12)
+names(brfss10)
+
+#..............................
+# Notes: 
+
+
+#......................................
+# Create smaller datasets & merge years ####
+#......................................
+
+#for 2018
+vars1 = c("x.state", "x.psu", "x.ststr", "x.llcpwt", "x.ageg5yr", "sex1", "hadhyst2",
+          "educa", "income2", "x.race", "hlthpln1", "hlthcvr1", "medcost", "checkup1",
+          "hpvtest", "hplsttst", "hpvadvc2", "hpvadsht", "hadpap2", "lastpap2", 
+          "marital", "children", "employ1", "imonth", "iyear", "numadult", "hhadult", 
+          "pregnant")
+
+#for 2016 and 2014
+vars2 = c("x.state", "x.psu", "x.ststr", "x.llcpwt", "x.ageg5yr", "sex", "hadhyst2",
+          "educa", "income2", "x.race", "hlthpln1", "hlthcvr1", "medcost", "checkup1",
+          "hpvtest", "hplsttst", "hpvadvc2", "hpvadsht", "hadpap2", "lastpap2", 
+          "marital", "children", "employ1", "imonth", "iyear", "numadult", "hhadult", 
+          "pregnant")
+
+#for 2012
+vars3 = c("x.state", "x.psu", "x.ststr", "x.llcpwt", "x.ageg5yr", "sex", "hadhyst2",
+          "educa", "income2", "race2", "hlthpln1", "medcost", "checkup1",
+          "hpvadvc2", "hpvadsht", "hadpap2", "lastpap2", "marital", "children", 
+          "employ", "imonth", "iyear", "numadult", "pregnant")
+
+#for 2010
+vars4 = c("x.state", "x.psu", "x.ststr", "x.finalwt", "x.ageg5yr", "sex", "hadhyst2",
+          "educa", "income2", "race2", "hlthplan", "medcost", "checkup1",
+          "hpvadvc2", "hpvadsht", "hadpap2", "lastpap2", 
+          "marital", "children", "employ", "imonth", "iyear", "numadult", 
+          "pregnant")
+
+#for 2020
+vars5 = c("x.state", "x.psu", "x.ststr", "x.llcpwt", "x.ageg5yr", "x.sex", "hadhyst2",
+          "educa", "income2", "x.race", "hlthpln1", "hlthcvr1", "medcost", "checkup1",
+          "hpvtest", "hplsttst", "hpvadvc4", "hpvadsht", "hadpap2", "lastpap2", 
+          "marital", "children", "employ1", "imonth", "iyear", "numadult", "hhadult", 
+          "pregnant")
+
+
+brfss20 <- brfss20[vars5]
+brfss18 <- brfss18[vars1]
+brfss16 <- brfss16[vars2]
+brfss14 <- brfss14[vars2]
+brfss12 <- brfss12[vars3]
+brfss10 <- brfss10[vars4]
+
+#create year indicator
+brfss20$year <- "2020"
+brfss18$year <- "2018"
+brfss16$year <- "2016"
+brfss14$year <- "2014"
+brfss12$year <- "2012"
+brfss10$year <- "2010"
+
+#create csvs for easier load in
+write.csv(brfss20, "brfss20.csv")
+write.csv(brfss18, "brfss18.csv")
+write.csv(brfss16, "brfss16.csv")
+write.csv(brfss14, "brfss14.csv")
+write.csv(brfss12, "brfss12.csv")
+write.csv(brfss10, "brfss10.csv")
+
+brfss20 <- read.csv("brfss20.csv", header = T, stringsAsFactors = F)
+brfss18 <- read.csv("brfss18.csv", header = T, stringsAsFactors = F)
+brfss16 <- read.csv("brfss16.csv", header = T, stringsAsFactors = F)
+brfss14 <- read.csv("brfss14.csv", header = T, stringsAsFactors = F)
+brfss12 <- read.csv("brfss12.csv", header = T, stringsAsFactors = F)
+brfss10 <- read.csv("brfss10.csv", header = T, stringsAsFactors = F)
+
+
+#append datasets
+# group strategically by year to get reasonably sized datasets
+
+#early 2010s - all10.12
+brfss10 <- rename(brfss10, "hadhyst"="hadhyst2", "income"="income2","race"="race2",
+                  "checkup"="checkup1","hpvvax"="hpvadvc2", 'hpvshot'="hpvadsht",
+                  "hadpap"="hadpap2", "lastpap"="lastpap2")
+brfss12 <- rename(brfss12, "hadhyst"="hadhyst2", "income"="income2","race"="race2",
+                  "x.finalwt"="x.llcpwt", "hlthplan"="hlthpln1", "checkup"="checkup1",
+                  "hpvvax"="hpvadvc2", 'hpvshot'="hpvadsht", "hadpap"="hadpap2", 
+                  "lastpap"="lastpap2")
+all10.12 <- full_join(brfss10, brfss12)
+all10.12$X <- NULL
+
+#mid/late 2010s - all14.18
+brfss14 <- rename(brfss14, "hadhyst"="hadhyst2", "income"="income2","race"="x.race",
+                  "x.finalwt"="x.llcpwt","hlthplan"="hlthpln1", "checkup"="checkup1",
+                  "hpvvax"="hpvadvc2", 'hpvshot'="hpvadsht", "hadpap"="hadpap2", 
+                  "lastpap"="lastpap2", "hlthcvr"="hlthcvr1", "hpvtime"="hplsttst",
+                  "employ"="employ1")
+brfss16 <- rename(brfss16, "hadhyst"="hadhyst2", "income"="income2","race"="x.race",
+                  "x.finalwt"="x.llcpwt", "hlthplan"="hlthpln1", "checkup"="checkup1",
+                  "hpvvax"="hpvadvc2", 'hpvshot'="hpvadsht", "hadpap"="hadpap2", 
+                  "lastpap"="lastpap2", "hlthcvr"="hlthcvr1", "hpvtime"="hplsttst",
+                  "employ"="employ1")
+brfss18 <- rename(brfss18, "hadhyst"="hadhyst2", "income"="income2","race"="x.race",
+                  "sex"="sex1", "x.finalwt"="x.llcpwt","hlthplan"="hlthpln1", "checkup"="checkup1",
+                  "hpvvax"="hpvadvc2", 'hpvshot'="hpvadsht", "hadpap"="hadpap2", 
+                  "lastpap"="lastpap2", "hlthcvr"="hlthcvr1", "hpvtime"="hplsttst",
+                  "employ"="employ1")
+all14.18 <- bind_rows(brfss14, brfss16, brfss18) 
+all14.18$X <- NULL
+
+brfss20 <- rename(brfss20, "hadhyst"="hadhyst2", "income"="income2","race"="x.race",
+                  "sex"="x.sex", "x.finalwt"="x.llcpwt","hlthplan"="hlthpln1", "checkup"="checkup1",
+                  "hpvvax"="hpvadvc4", 'hpvshot'="hpvadsht", "hadpap"="hadpap2", 
+                  "lastpap"="lastpap2", "hlthcvr"="hlthcvr1", "hpvtime"="hplsttst",
+                  "employ"="employ1")
+brfss20$X <- NULL
+
+#..............................
+# Notes:
+
+
+#..............................
+# Recode Variables, 2010-2020 ####
+#..............................
+
+##RACETH##
+# recode race into 7 categories (NH white, NH Black, Hisp, NH Asian, NH AI/AN, 
+# NH PI/NH, NH Other/Multi)
+# (raceth); create factor too (raceth_f)
+
+#2010-12
+describe(all10.12$race)
+all10.12$raceth <- all10.12$race #copy values over to new var
+all10.12$raceth[is.na(all10.12$race) | is.nan(all10.12$race) | all10.12$race == 9] <- NA
+all10.12$raceth[all10.12$race == 5] <- 3
+all10.12$raceth[all10.12$race == 4] <- 5
+all10.12$raceth[all10.12$race == 3] <- 4
+table(all10.12$raceth, useNA = "always")
+
+all10.12$raceth_f <- factor(all10.12$raceth, levels=1:8,
+                            labels = c("NH White", "NH Black", "NH AI/AN", "NH Asian", "NH NH/PI", 
+                                       "NH Other", "NH Multi", "Hispanic")) #create raceth_f
+table(all10.12$raceth_f, useNA = "always")
+
+#2014-18
+describe(all14.18$race)
+all14.18$raceth <- all14.18$race #copy values over to new var
+all14.18$raceth[is.na(all14.18$race) | is.nan(all14.18$race) | all14.18$race == 9] <- NA
+table(all14.18$raceth, useNA = "always")
+
+all14.18$raceth_f <- factor(all14.18$raceth, levels=1:8,
+                            labels = c("NH White", "NH Black", "NH AI/AN", "NH Asian", "NH NH/PI", 
+                                       "NH Other", "NH Multi", "Hispanic")) #create raceth_f
+table(all14.18$raceth_f, useNA = "always")
+
+#2020
+describe(brfss20$race)
+brfss20$raceth <- brfss20$race #copy values over to new var
+brfss20$raceth[is.na(brfss20$race) | is.nan(brfss20$race) | brfss20$race == 9] <- NA
+table(brfss20$raceth, useNA = "always")
+
+brfss20$raceth_f <- factor(brfss20$raceth, levels=1:8,
+                           labels = c("NH White", "NH Black", "NH AI/AN", "NH Asian", "NH NH/PI", 
+                                      "NH Other", "NH Multi", "Hispanic")) #create raceth_f
+table(brfss20$raceth_f, useNA = "always")
+
+
+
+##EDU##
+# recode educa into 4 categories (< HS, HS grad, some college, college grad) 
+# (edu); create factor too (edu_f)
+# only for years 2002+
+
+#2010-2012
+table(all10.12$educa, exclude=NULL)
+all10.12$edu[all10.12$educa == 9 | is.na(all10.12$educa) | is.nan(all10.12$educa)] <- NA
+all10.12$edu[all10.12$educa == 1 | all10.12$educa == 2 | all10.12$educa == 3 ] <-1
+all10.12$edu[all10.12$educa ==4] <- 2
+all10.12$edu[all10.12$educa ==5] <-3
+all10.12$edu[all10.12$educa == 6] <-4
+table(all10.12$edu, useNA = "always")
+
+all10.12$edu_f <- factor(all10.12$edu, levels=1:4,
+                         labels = c("< HS", "HS grad/GED", "Some college/tech", 
+                                    "College grad")) #create edu_f
+
+#2014-2018
+table(all14.18$educa, exclude=NULL)
+all14.18$edu[all14.18$educa == 9 | is.na(all14.18$educa) | is.nan(all14.18$educa)] <- NA
+all14.18$edu[all14.18$educa == 1 | all14.18$educa == 2 | all14.18$educa == 3 ] <-1
+all14.18$edu[all14.18$educa ==4] <- 2
+all14.18$edu[all14.18$educa ==5] <-3
+all14.18$edu[all14.18$educa == 6] <-4
+table(all14.18$edu, useNA = "always")
+
+all14.18$edu_f <- factor(all14.18$edu, levels=1:4,
+                         labels = c("< HS", "HS grad/GED", "Some college/tech", 
+                                    "College grad")) #create edu_f
+
+#2020
+table(brfss20$educa, exclude=NULL)
+brfss20$edu[brfss20$educa == 9 | is.na(brfss20$educa) | is.nan(brfss20$educa)] <- NA
+brfss20$edu[brfss20$educa == 1 | brfss20$educa == 2 | brfss20$educa == 3 ] <-1
+brfss20$edu[brfss20$educa ==4] <- 2
+brfss20$edu[brfss20$educa ==5] <-3
+brfss20$edu[brfss20$educa == 6] <-4
+table(brfss20$edu, useNA = "always")
+
+brfss20$edu_f <- factor(brfss20$edu, levels=1:4,
+                        labels = c("< HS", "HS grad/GED", "Some college/tech", 
+                                   "College grad")) #create edu_f
+
+
+##INC##
+# recode household income as a 5-level categorical variable
+# income (inc); as factor (inc_f)
+
+#2010-12
+describe(all10.12$income)
+all10.12$inc[all10.12$income == 77 | all10.12$income ==99 | 
+               is.na(all10.12$income) | is.nan(all10.12$income)] <- NA
+all10.12$inc[all10.12$income == 1 | all10.12$income == 2] <- 1
+all10.12$inc[all10.12$income == 3 | all10.12$income == 4] <- 2
+all10.12$inc[all10.12$income == 5 | all10.12$income == 6] <- 3
+all10.12$inc[all10.12$income == 7] <- 4
+all10.12$inc[all10.12$income == 8] <- 5
+table(all10.12$inc, useNA = "always")
+
+all10.12$inc_f <- factor(all10.12$inc, levels = 1:5, labels = 
+                           c("< $15K", "$15-25K", "$25-50K", "$50-75K", "$75K+"))
+table(all10.12$inc_f, useNA = "always")
+#14.2% missing income
+
+#14-18
+describe(all14.18$income)
+all14.18$inc[all14.18$income == 77 | all14.18$income ==99 | 
+               is.na(all14.18$income) | is.nan(all14.18$income)] <- NA
+all14.18$inc[all14.18$income == 1 | all14.18$income == 2] <- 1
+all14.18$inc[all14.18$income == 3 | all14.18$income == 4] <- 2
+all14.18$inc[all14.18$income == 5 | all14.18$income == 6] <- 3
+all14.18$inc[all14.18$income == 7] <- 4
+all14.18$inc[all14.18$income == 8] <- 5
+table(all14.18$inc, useNA = "always")
+
+all14.18$inc_f <- factor(all14.18$inc, levels = 1:5, labels = 
+                           c("< $15K", "$15-25K", "$25-50K", "$50-75K", "$75K+"))
+table(all14.18$inc_f, useNA = "always")
+#16.5% missing income
+
+#2020
+describe(brfss20$income)
+brfss20$inc[brfss20$income == 77 | brfss20$income ==99 | 
+              is.na(brfss20$income) | is.nan(brfss20$income)] <- NA
+brfss20$inc[brfss20$income == 1 | brfss20$income == 2] <- 1
+brfss20$inc[brfss20$income == 3 | brfss20$income == 4] <- 2
+brfss20$inc[brfss20$income == 5 | brfss20$income == 6] <- 3
+brfss20$inc[brfss20$income == 7] <- 4
+brfss20$inc[brfss20$income == 8] <- 5
+table(brfss20$inc, useNA = "always")
+
+brfss20$inc_f <- factor(brfss20$inc, levels = 1:5, labels = 
+                          c("< $15K", "$15-25K", "$25-50K", "$50-75K", "$75K+"))
+table(brfss20$inc_f, useNA = "always")
+#19.9% missing income
+
+
+##AGEGRP##
+# x.ageg5yr (recode missing values as NA)
+# then use it to create agegrp and factor (agegrp_f); 5 yr age groups until 44, then older
+# as one group
+
+#2010-12
+describe(all10.12$x.ageg5yr)
+all10.12$x.ageg5yr[all10.12$x.ageg5yr == 14 | is.na(all10.12$x.ageg5yr) | is.nan(all10.12$x.ageg5yr)] <- NA
+
+all10.12$agegrp <- all10.12$x.ageg5yr
+all10.12$agegrp[all10.12$agegrp > 9] <- 10
+describe(all10.12$agegrp)
+
+all10.12$agegrp_f <- factor(all10.12$agegrp, levels = 1:10, labels = 
+                              c("18-24", "25-29", "30-34", "35-39", "40-44", "45-49",
+                                "50-54", "55-59", "60-64", "65+"))
+table(all10.12$agegrp_f, useNA = "always")
+
+#2014-18
+describe(all14.18$x.ageg5yr)
+all14.18$x.ageg5yr[all14.18$x.ageg5yr == 14 | is.na(all14.18$x.ageg5yr) | is.nan(all14.18$x.ageg5yr)] <- NA
+
+all14.18$agegrp <- all14.18$x.ageg5yr
+all14.18$agegrp[all14.18$agegrp > 9] <- 10
+describe(all14.18$agegrp)
+
+all14.18$agegrp_f <- factor(all14.18$agegrp, levels = 1:10, labels = 
+                              c("18-24", "25-29", "30-34", "35-39", "40-44", "45-49",
+                                "50-54", "55-59", "60-64", "65+"))
+table(all14.18$agegrp_f, useNA = "always")
+
+#2020
+describe(brfss20$x.ageg5yr)
+brfss20$x.ageg5yr[brfss20$x.ageg5yr == 14 | is.na(brfss20$x.ageg5yr) | is.nan(brfss20$x.ageg5yr)] <- NA
+brfss20$agegrp <- brfss20$x.ageg5yr
+brfss20$agegrp[brfss20$agegrp > 9] <- 10
+describe(brfss20$agegrp)
+
+brfss20$agegrp_f <- factor(brfss20$agegrp, levels = 1:10, labels = 
+                             c("18-24", "25-29", "30-34", "35-39", "40-44", "45-49",
+                               "50-54", "55-59", "60-64", "65+"))
+table(brfss20$agegrp_f, useNA = "always")
+
+
+##HYST##
+# hadhyst recode missing as NA
+# make indicator (hyst) and factor (hyst_f)
+
+#2010-12
+table(all10.12$hadhyst, useNA = "always")
+all10.12$hyst[all10.12$hadhyst == 7 | all10.12$hadhyst == 9 | 
+                is.na(all10.12$hadhyst) | is.nan(all10.12$hadhyst)] <- NA
+all10.12$hyst[all10.12$hadhyst == 1] <- 1
+all10.12$hyst[all10.12$hadhyst == 2] <- 0 
+table(all10.12$hyst, useNA = "always")
+
+all10.12$hyst_f <- factor(all10.12$hyst, levels = 0:1, 
+                          labels = c("No hyst", "Had hyst"))
+table(all10.12$hyst_f, useNA = "always")
+
+#2014-18
+table(all14.18$hadhyst, useNA = "always")
+all14.18$hyst[all14.18$hadhyst == 7 | all14.18$hadhyst == 9 | 
+                is.na(all14.18$hadhyst) | is.nan(all14.18$hadhyst)] <- NA
+all14.18$hyst[all14.18$hadhyst == 1] <- 1
+all14.18$hyst[all14.18$hadhyst == 2] <- 0 
+table(all14.18$hyst, useNA = "always")
+
+all14.18$hyst_f <- factor(all14.18$hyst, levels = 0:1, 
+                          labels = c("No hyst", "Had hyst"))
+table(all14.18$hyst_f, useNA = "always")
+
+#2020
+table(brfss20$hadhyst, useNA = "always")
+brfss20$hyst[brfss20$hadhyst == 7 | brfss20$hadhyst == 9 | 
+               is.na(brfss20$hadhyst) | is.nan(brfss20$hadhyst)] <- NA
+brfss20$hyst[brfss20$hadhyst == 1] <- 1
+brfss20$hyst[brfss20$hadhyst == 2] <- 0 
+table(brfss20$hyst, useNA = "always")
+
+brfss20$hyst_f <- factor(brfss20$hyst, levels = 0:1, 
+                         labels = c("No hyst", "Had hyst"))
+table(brfss20$hyst_f, useNA = "always")
+
+
+
+##STATE & REGION##
+# Recode territories to be same number
+# add state names (lowername) and region (region); and factors (state_f; region_f)
+
+#add state names (lowernames)
+fips <- read.csv("StateFips.csv", header=T, stringsAsFactors = F)
+head(fips)
+fips$X <- NULL
+
+#2010-12
+table(all10.12$x.state, useNA = "always")
+all10.12$state <- ifelse(all10.12$x.state < 66, 1, 0)
+
+#add state names (lowernames)
+all10.12 <- left_join(all10.12, fips, by="x.state")
+head(all10.12)
+
+all10.12$state_f <- factor(all10.12$x.state, levels = fips[,2],
+                           labels = fips[,1]) # make state as a factor
+table(all10.12$state_f, useNA = "always")
+
+all10.12$region_f <- factor(all10.12$region, levels = 1:4, labels = 
+                              c("Northeast", "Midwest", "South", "West")) #make region a factor
+table(all10.12$region_f, exclude=NULL)
+
+#2014-18
+table(all14.18$x.state, useNA = "always")
+all14.18$state <- ifelse(all14.18$x.state < 66, 1, 0)
+
+#add state names (lowernames)
+all14.18 <- left_join(all14.18, fips, by="x.state")
+head(all14.18)
+
+all14.18$state_f <- factor(all14.18$x.state, levels = fips[,2],
+                           labels = fips[,1]) # make state as a factor
+table(all14.18$state_f, useNA = "always")
+
+all14.18$region_f <- factor(all14.18$region, levels = 1:4, labels = 
+                              c("Northeast", "Midwest", "South", "West")) #make region a factor
+table(all14.18$region_f, exclude=NULL)
+
+#2020
+table(brfss20$x.state, useNA = "always")
+brfss20$state <- ifelse(brfss20$x.state < 66, 1, 0)
+
+#add state names (lowernames)
+brfss20 <- left_join(brfss20, fips, by="x.state")
+head(brfss20)
+
+brfss20$state_f <- factor(brfss20$x.state, levels = fips[,2],
+                          labels = fips[,1]) # make state as a factor
+table(brfss20$state_f, useNA = "always")
+
+brfss20$region_f <- factor(brfss20$region, levels = 1:4, labels = 
+                             c("Northeast", "Midwest", "South", "West")) #make region a factor
+table(brfss20$region_f, exclude=NULL)
+
+
+
+##FEMALE##
+# Recode sex to be 0/1 indicator; for 2016 add 2018, recode missing first
+# for 2020, use birthsex (but already renamed to sex)
+# female and female_f
+
+#2010-2012
+describe(all10.12$sex)
+all10.12$female <- ifelse(all10.12$sex == 2, 1, 0)
+table(all10.12$female)
+all10.12$female_f <- factor(all10.12$female, levels = 0:1,
+                            labels = c("Male", "Female"))
+
+#2014-18
+describe(all14.18$sex)
+all14.18$sex[all14.18$sex == 7 | all14.18$sex == 9] <- NA
+all14.18$female <- ifelse(all14.18$sex == 2, 1, 0)
+table(all14.18$female, useNA = "always")
+all14.18$female_f <- factor(all14.18$female, levels = 0:1,
+                            labels = c("Male", "Female"))
+
+#2020
+describe(brfss20$sex)
+table(brfss20$sex, useNA = "always")
+brfss20$sex[brfss20$sex == 7 | brfss20$sex == 9] <- NA
+brfss20$female <- ifelse(brfss20$sex == 2, 1, 0)
+table(brfss20$female, useNA = "always")
+brfss20$female_f <- factor(brfss20$female, levels = 0:1,
+                           labels = c("Male", "Female"))
+table(brfss20$female_f, useNA = "always")
+
+
+##Healthplan##
+# Recode to be 0/1 indicator; recode missing first
+# healthplan and healthplan_f
+
+#2010-2012
+describe(all10.12$hlthplan)
+all10.12$hlthplan[all10.12$hlthplan == 7 | all10.12$hlthplan == 9] <- NA
+all10.12$healthplan <- ifelse(all10.12$hlthplan == 2, 0, 
+                              ifelse((is.na(all10.12$hlthplan)), NA, 1))
+table(all10.12$healthplan, useNA = "always")
+all10.12$healthplan_f <- factor(all10.12$healthplan, levels = 0:1,
+                                labels = c("No Ins", "Yes Ins"))
+
+#2014-18
+describe(all14.18$hlthplan)
+all14.18$hlthplan[all14.18$hlthplan == 7 | all14.18$hlthplan == 9] <- NA
+all14.18$healthplan <- ifelse(all14.18$hlthplan == 2, 0, 
+                              ifelse((is.na(all14.18$hlthplan)), NA, 1))
+table(all14.18$healthplan, useNA = "always")
+all14.18$healthplan_f <- factor(all14.18$healthplan, levels = 0:1,
+                                labels = c("No Ins", "Yes Ins"))
+
+#2020
+describe(brfss20$hlthplan)
+brfss20$hlthplan[brfss20$hlthplan == 7 | brfss20$hlthplan == 9] <- NA
+brfss20$healthplan <- ifelse(brfss20$hlthplan == 2, 0, 
+                             ifelse((is.na(brfss20$hlthplan)), NA, 1))
+table(brfss20$healthplan, useNA = "always")
+brfss20$healthplan_f <- factor(brfss20$healthplan, levels = 0:1,
+                               labels = c("No Ins", "Yes Ins"))
+table(brfss20$healthplan_f, useNA = "always")
+
+
+##Avoided care b/c of cost##
+# Recode to be 0/1 indicator; recode missing first
+# avoidmedcost and avoidmedcost_f
+
+#2010-2012
+describe(all10.12$medcost)
+all10.12$medcost[all10.12$medcost == 7 | all10.12$medcost == 9] <- NA
+all10.12$avoidmedcost <- ifelse(all10.12$medcost == 2, 0, 
+                                ifelse((is.na(all10.12$medcost)), NA, 1))
+table(all10.12$avoidmedcost, useNA = "always")
+all10.12$avoidmedcost_f <- factor(all10.12$avoidmedcost, levels = 0:1,
+                                  labels = c("Didn't avoid", "Avoided"))
+
+#2014-18
+describe(all14.18$medcost)
+all14.18$medcost[all14.18$medcost == 7 | all14.18$medcost == 9] <- NA
+all14.18$avoidmedcost <- ifelse(all14.18$medcost == 2, 0, 
+                                ifelse((is.na(all14.18$medcost)), NA, 1))
+table(all14.18$avoidmedcost, useNA = "always")
+all14.18$avoidmedcost_f <- factor(all14.18$avoidmedcost, levels = 0:1,
+                                  labels = c("Didn't avoid", "Avoided"))
+
+#2020
+describe(brfss20$medcost)
+brfss20$medcost[brfss20$medcost == 7 | brfss20$medcost == 9] <- NA
+brfss20$avoidmedcost <- ifelse(brfss20$medcost == 2, 0, 
+                               ifelse((is.na(brfss20$medcost)), NA, 1))
+table(brfss20$avoidmedcost, useNA = "always")
+brfss20$avoidmedcost_f <- factor(brfss20$avoidmedcost, levels = 0:1,
+                                 labels = c("Didn't avoid", "Avoided"))
+table(brfss20$avoidmedcost_f, useNA = "always")
+
+
+#append data to make coding easier
+all <- bind_rows(all10.12, all14.18, brfss20)
+
+##PREGNANT##
+# recode preganancy into 0/1 variable
+# preg and preg_f
+
+describe(all$pregnant)
+all$pregnant[all$pregnant == 7 | all$pregnant == 9] <- NA
+all$preg <- ifelse(all$pregnant == 1, 1, 
+                   ifelse((is.na(all$pregnant)), NA, 0))
+table(all$preg, useNA = "always")
+all$preg_f <- factor(all$preg, levels = 0:1,
+                     labels = c("Not pregnant", "Pregnant"))
+
+
+
+##Check up in last year##
+# Recode to be 0/1 indicator; recode missing first
+# checkup1yr and checkup1yr_f
+
+#2010-2018
+describe(all$checkup)
+all$checkup[all$checkup == 7 | all$checkup == 9] <- NA
+all$checkup1yr <- ifelse(all$checkup == 1, 1, 
+                         ifelse((is.na(all$checkup)), NA, 0))
+table(all$checkup1yr, useNA = "always")
+all$checkup1yr_f <- factor(all$checkup1yr, levels = 0:1,
+                           labels = c("No Checkup 1yr", "Checkup 1yr"))
+
+
+##HPV vaccination##
+# Recode to be 0/1 indicator; recode missing first
+# hpvvaxx and hpvvaxx_f
+
+#2010-2018
+describe(all$hpvvax)
+all$hpvvax[all$hpvvax == 7 | all$hpvvax == 9] <- NA
+all$hpvvaxx <- ifelse(all$hpvvax == 1, 1, 
+                      ifelse((is.na(all$hpvvax)), NA, 0))
+table(all$hpvvaxx, useNA = "always")
+all$hpvvaxx_f <- factor(all$hpvvaxx, levels = 0:1,
+                        labels = c("No Vax", "Vax"))
+
+##HPV shot number##
+# Recode to be 0/1 indicators; recode missing first
+# hpvshot3 and hpvshot3_f
+# hpvshotnum and hpvshotnum_f
+
+#2010-2020 - indicator for all 3 shots
+describe(all$hpvshot)
+all$hpvshot[all$hpvshot == 77 | all$hpvshot == 99] <- NA
+all$hpvshot3 <- ifelse(all$hpvshot == 3, 1, 
+                       ifelse((is.na(all$hpvshot)), NA, 0))
+table(all$hpvshot3, useNA = "always") #NA=2707331 
+all$hpvshot3_f <- factor(all$hpvshot3, levels = 0:1,
+                         labels = c("Not all 3", "All 3"))
+
+#2010-2020 - number of shots
+describe(all$hpvshot)
+all$hpvshot[all$hpvshot == 77 | all$hpvshot == 99] <- NA
+all$hpvshotnum <- ifelse(all$hpvshot == 3, 3, 
+                         ifelse((is.na(all$hpvshot)), NA, 
+                                ifelse(all$hpvshot==2, 2, 1)))
+table(all$hpvshotnum, useNA = "always") #NA=2707331 
+all$hpvshotnum_f <- factor(all$hpvshotnum, levels = 1:3,
+                           labels = c("1 shot", "2 shots", "all 3"))
+
+##Pap test (ever/never)##
+# Recode to be 0/1 indicator; recode missing first
+# hadpaptst & hadpaptest_f
+
+#2010-2020
+describe(all$hadpap)
+all$hadpap[all$hadpap == 7 | all$hadpap == 9] <- NA
+all$hadpaptest <- ifelse(all$hadpap == 2, 0, 
+                         ifelse((is.na(all$hadpap)), NA, 1))
+table(all$hadpaptest, useNA = "always") 
+all$hadpaptest_f <- factor(all$hadpaptest, levels = 0:1,
+                           labels = c("No", "Yes"))
+
+##Time since pap##
+# Recode to indicate years since; recode missing first
+# lastpapyr and lastpapyr_f
+
+#2010-2020
+describe(all$lastpap)
+all$lastpap[all$lastpap == 7 | all$lastpap == 9] <- NA
+all$lastpapyr <- all$lastpap
+table(all$lastpapyr, useNA = "always") 
+all$lastpapyr_f <- factor(all$lastpapyr, levels = 1:5,
+                          labels = c("w/in 1 yr", "w/in 2 yrs", "w/in 3 yrs", 
+                                     "w/in 5 yrs", "5+ yrs"))
+
+
+##marital status##
+# Recode to indicate years since; recode missing first
+# marital and marital_f
+# married and married_f
+
+#2010-2020 - marital status (includes all options)
+describe(all$marital)
+all$marital[all$marital == 9] <- NA
+table(all$marital, useNA = "always") 
+all$marital_f <- factor(all$marital, levels = 1:6,
+                        labels = c("married", "divorced", "widowed", 
+                                   "separated", "never married", "unmarried couple"))
+table(all$marital_f, useNA = "always") 
+
+#2010-2020 - married
+table(all$marital, useNA = "always") 
+all$married <- ifelse((all$marital == 1 | all$marital == 4), 1, 
+                      ifelse((is.na(all$hadpap)), NA, 0))
+all$married_f <- factor(all$married, levels = 0:1,
+                        labels = c("not married", "married"))
+describe(all$married_f)
+
+##dependents##
+# Recode to indicator; recode missing first
+# dependent and dependent_f
+
+#2010-2020
+describe(all$children)
+all$children[all$children == 99] <- NA
+all$dependent <- ifelse((all$children < 87 & all$children > 0), 1, 
+                        ifelse(is.na(all$children), NA, 0))
+table(all$dependent, useNA = "always") 
+all$dependent_f <- factor(all$dependent, levels = 0:1,
+                          labels = c("no dependents", "dependents"))
+table(all$dependent_f, useNA = "always") 
+
+
+##working##
+# Recode to indicator; recode missing first
+# working and working_f
+
+#2010-2020
+describe(all$employ)
+all$employ[all$employ == 9] <- NA
+all$working <- ifelse((all$employ==1 | all$employ==2), 1, 
+                      ifelse(is.na(all$employ), NA, 0))
+table(all$working, useNA = "always") 
+all$working_f <- factor(all$working, levels = 0:1,
+                        labels = c("not employed", "employed"))
+table(all$working_f, useNA = "always")
+
+##guideline adherent screening##
+# Recode to indicator; recode missing first
+# guideccscreen and guideccscreen_f
+
+#2010-2020 - recode HPV test
+# hadhpvtest & hadhpvtest_f
+describe(all$hpvtest)
+all$hpvtest[all$hpvtest == 9 | all$hpvtest == 7] <- NA
+all$hadhpvtest <- ifelse(all$hpvtest==1, 1, 
+                         ifelse(is.na(all$hpvtest), NA, 0))
+table(all$hadhpvtest, useNA = "always") 
+all$hadhpvtest_f <- factor(all$hadhpvtest, levels = 0:1,
+                           labels = c("no hpv test", "hpv test"))
+
+#2010-2020 - recode time since HPV test (3yrs)
+# timesincehpv3 & timesincehpv3_f
+describe(all$hpvtime)
+all$hpvtime[all$hpvtime == 9 | all$hpvtime == 7] <- NA
+all$timesincehpv3 <- ifelse((all$hpvtime==1 | all$hpvtime==2 | all$hpvtime==3), 1, 
+                            ifelse(is.na(all$hpvtime), NA, 0))
+table(all$timesincehpv3, useNA = "always") 
+all$timesincehpv3_f <- factor(all$timesincehpv3, levels = 0:1,
+                              labels = c("not w/in 3yrs", "w/in 3yrs"))
+
+#2010-2020 - recode time since HPV test (5yrs)
+# timesincehpv5 & timesincehpv5_f
+all$timesincehpv5 <- ifelse((all$hpvtime==1 | all$hpvtime==2 | all$hpvtime==3 | all$hpvtime ==4), 1, 
+                            ifelse(is.na(all$hpvtime), NA, 0))
+table(all$timesincehpv5, useNA = "always") 
+all$timesincehpv5_f <- factor(all$timesincehpv5, levels = 0:1,
+                              labels = c("not w/in 5yrs", "w/in 5yrs"))
+
+#2010-2020 - recode time since pap test (3yrs)
+# lastpapyr3 & lastpapyr3_f
+describe(all$lastpapyr)
+all$lastpapyr3 <- ifelse((all$lastpapyr==1 | all$lastpapyr==2 | all$lastpapyr==3), 1, 
+                         ifelse(is.na(all$lastpapyr), NA, 0))
+table(all$lastpapyr3, useNA = "always") 
+all$lastpapyr3_f <- factor(all$lastpapyr3, levels = 0:1,
+                           labels = c("not w/in 3yrs", "w/in 3yrs"))
+
+#2010-2020 - recode time since pap test (5yrs)
+# lastpapyr5 & lastpapyr5_f
+all$lastpapyr5 <- ifelse((all$lastpapyr==1 | all$lastpapyr==2 | all$lastpapyr==3 | all$lastpapyr ==4), 1, 
+                         ifelse(is.na(all$lastpapyr), NA, 0))
+table(all$lastpapyr5, useNA = "always") 
+all$lastpapyr5_f <- factor(all$lastpapyr5, levels = 0:1,
+                           labels = c("not w/in 5yrs", "w/in 5yrs"))
+
+#2010-2020 - recode time since pap test (1yrs)
+# lastpapyr1 & lastpapyr1_f
+all$lastpapyr1 <- ifelse((all$lastpapyr==1), 1, 
+                         ifelse(is.na(all$lastpapyr), NA, 0))
+table(all$lastpapyr1, useNA = "always") 
+all$lastpapyr1_f <- factor(all$lastpapyr1, levels = 0:1,
+                           labels = c("not w/in 1yr", "w/in 1yr"))
+
+
+
+#2010-2020 - guideline adherent screening, age-specific
+# guideccscreen and guideccscreen_f
+
+#used ACS 2012 recommendations:
+# -less than 21 = no screening needed
+# 21-29 = pap smear in last 3 years
+# 20+ = pap smear in last 3 years or co testing in last 5 years
+
+all$guideccscreen <- ifelse(((all$year<2013 & all$lastpapyr3==1) | 
+                               (all$year>2013 & all$agegrp==1 & all$lastpapyr5==0) |
+                               (all$year>2013 & all$agegrp==2 &all$lastpapyr3==1) |
+                               (all$year>2013 & all$agegrp>2 & all$lastpapyr3==1) |
+                               (all$year>2013 & all$agegrp>2 & all$lastpapyr5==1 & all$timesincehpv5==1)), 1, 0)
+table(all$guideccscreen, useNA = "always")
+all$guideccscreen_f <- factor(all$guideccscreen, levels = 0:1,
+                              labels = c("not guideline adherent", "guideline adherent"))
+
+table(all$raceth_f, all$guideccscreen_f, useNA = "always")
+
+##household size##
+# recode missing first, if needed; add together adults and children in each house
+# housesize
+
+#2010-2020
+describe(all$hhadult)
+all$adults <- all$hhadult
+all$adults[all$hhadult==77 | all$hhadult==99 | all$hhadult==88] <- NA
+all$adults[is.na(all$hhadult)] <- 1
+describe(all$adults)
+#conclusion: don't use hhadult, more missinginess than numadult and doesn't exist for some years
+
+describe(all$numadult)
+all$adults2 <- all$numadult
+all$adults2[is.na(all$numadult)] <- 1
+describe(all$adults2)
+
+#all$alladults<-apply(all[,c("adults", "adults2")], MARGIN=1, FUN=max)
+#describe(all$alladults)
+
+describe(all$children)
+all$child <- all$children
+all$child[all$children==88] <- 0
+describe(all$child)
+
+all$housesize <- all$child+all$adults2
+describe(all$housesize)
+
+all$household <- all$housesize
+all$household[all$housesize>8] <- 8
+describe(all$household)
+
+##Year month##
+#concatenate value of year and month
+#iYrMnth
+
+describe(all$iyear)
+describe(all$imonth)
+all$imonthch <- as.character(all$imonth)
+all$imonthch[all$imonth==1] <- "01"
+all$imonthch[all$imonth==2] <- "02"
+all$imonthch[all$imonth==3] <- "03"
+all$imonthch[all$imonth==4] <- "04"
+all$imonthch[all$imonth==5] <- "05"
+all$imonthch[all$imonth==6] <- "06"
+all$imonthch[all$imonth==7] <- "07"
+all$imonthch[all$imonth==8] <- "08"
+all$imonthch[all$imonth==9] <- "09"
+all$imonthch[all$imonth==10] <- "10"
+all$imonthch[all$imonth==11] <- "11"
+all$imonthch[all$imonth==12] <- "12"
+all$iYrMnth <- as.character(paste(all$iyear, all$imonthch, sep = ""))
+describe(all$iYrMnth)
+
+#start date for exposure
+#dateexpstarts
+all$expstart100 <- as.numeric(all$iYrMnth)+100 #to make sure everyone has at least 1
+#year of exposure to the expansion
+all$expstart <- as.numeric(all$iYrMnth)
+describe(all$expstart100)
+describe(all$expstart)
+#..............................
+# Notes: between 13-16% of household income is missing - when subset to inclusive group
+# there is just over X% missing
+# very few with hpv vax shot number
+
+#..............................
+# Code for exposure & relative year ####
+#........................................
+
+#load expansion helper
+exphelp <- read.csv("statehelp.csv", header=T, stringsAsFactors = F)
+exphelp$lowername <- tolower(exphelp$state)
+
+#merge with data
+allexp <- all %>%
+  left_join(exphelp, by="lowername")
+
+#relative yr (1=year of expansion), real time
+##code for relative year and merge in
+relativeY <- allexp %>%
+  group_by(iyear) %>%
+  summarise(n()) %>%
+  dplyr::select(iyear)
+#NOTE used iyear, so actual year of interview, not year+1
+
+# 1 is for expansion year, 0 for pre expansion year
+relativeY0r <- relativeY
+relativeY0r$ExposGrp <- 0 #control
+relativeY0r$reltime <- c(-3:8)
+relativeY0r$reltimepos <- c(7:18)
+relativeY0r$reltime2 <- c(-1, -1, 0, 0, 1, 1, 2, 2, 3, 3, 4, 4)
+relativeY0r$reltimepos2 <- c(4, 4, 5, 5, 6, 6, 7, 7, 8, 8, 9, 9)
+
+relativeY1r <- relativeY
+relativeY1r$ExposGrp <- 1 #1/1/14 expanders
+relativeY1r$reltime <- c(-3:8)
+relativeY1r$reltimepos <- c(7:18)
+relativeY1r$reltime2 <- c(-1, -1, 0, 0, 1, 1, 2, 2, 3, 3, 4, 4)
+relativeY1r$reltimepos2 <- c(4, 4, 5, 5, 6, 6, 7, 7, 8, 8, 9, 9)
+
+relativeY2r <- relativeY
+relativeY2r$ExposGrp <- 2 #2015 expanders
+relativeY2r$reltime <- c(-4:7)
+relativeY2r$reltimepos <- c(6:17)
+relativeY2r$reltime2 <- c(-2, -2, -1, -1, 0, 0, 1, 1, 2, 2, 3, 3)
+relativeY2r$reltimepos2 <- c(3, 3, 4, 4, 5, 5, 6, 6, 7, 7, 8, 8)
+
+relativeY3r <- relativeY
+relativeY3r$ExposGrp <- 3 #2016 expanders
+relativeY3r$reltime <- c(-5: 6)
+relativeY3r$reltimepos <- c(5:16)
+relativeY3r$reltime2 <- c(-2, -2, -1, -1, 0, 0, 1, 1, 2, 2, 3, 3)
+relativeY3r$reltimepos2 <- c(3, 3, 4, 4, 5, 5, 6, 6, 7, 7, 8, 8)
+
+relativeY4r <- relativeY
+relativeY4r$ExposGrp <- 4 #2019 expanders
+relativeY4r$reltime <- c(-8: 3)
+relativeY4r$reltimepos <- c(2:13)
+relativeY4r$reltime2 <- c(-4, -4, -3, -3, -2, -2, -1, -1, 0, 0, 1, 1)
+relativeY4r$reltimepos2 <- c(1, 1, 2, 2, 3, 3, 4, 4, 5, 5, 6, 6)
+
+relativeY5r <- relativeY
+relativeY5r$ExposGrp <- 5 #2020 expanders
+relativeY5r$reltime <- c(-9:2)
+relativeY5r$reltimepos <- c(1:12)
+relativeY5r$reltime2 <- c(-4, -4, -3, -3, -2, -2, -1, -1, 0, 0, 1, 1)
+relativeY5r$reltimepos2 <- c(1, 1, 2, 2, 3, 3, 4, 4, 5, 5, 6, 6)
+
+allreltime <- bind_rows(relativeY0r, relativeY1r, relativeY2r, relativeY3r, relativeY4r, relativeY5r)
+#allreltime$iyear <- as.character(allreltime$iyear)
+
+allexp <- allexp %>%
+  left_join(allreltime, by=c("iyear", "ExposGrp"))
+
+#Code for expansion exclusion for later sensitivity analysis
+allexp$earlyexp <- 0
+allexp$earlyexp[allexp$mrstate %in% c("DC", "DE", "MA", "NY", "VT")] <- 1
+
+#.......................................................
+#NOTES: 
+
+#..............................
+# Merge extra data ####
+#..............................
+#Unemployment for 2010-2018 from here: (http://ukcpr.org/resources/national-welfare-data)
+#Unemployment for 2020 from here: (https://www.bls.gov/news.release/srgune.nr0.htm)
+
+#ready 2019-2020 data for merging
+unemploy20 <- read.csv("unemploy2020.csv", stringsAsFactors = FALSE)
+unemploy20$lowername <- tolower(unemploy20$state)
+unemploy20 <- unemploy20 %>% 
+  select(-state) %>%
+  full_join(exphelp, by="lowername") %>%
+  rename(Unempl=unemployment, iyear=year) %>%
+  select(mrstate, state, lowername, iyear, Unempl)
+
+unemploy20 <- unemploy20 %>%
+  full_join(fips, by="lowername") %>%
+  rename(state_fips = x.state) %>%
+  select(-region, -lowername, -state)
+
+unemploy20$state <- unemploy20$state_fips
+
+#read in Welfare .csv
+welfare <- read.csv("Welfare.csv", stringsAsFactors = FALSE)
+welfare <- welfare %>%
+  dplyr::select(-Unemployment, -Population) %>%
+  filter(year %in% 2010:2018) %>%
+  rename(mrstate =state_name, Unempl=Unemployment.rate, iyear=year)
+
+welfare <- welfare %>% bind_rows(unemploy20)
+
+#allexp$year <- as.numeric(allexp$year)
+allexp2 <- allexp %>%
+  left_join(welfare, by=c("mrstate", "iyear"))
+
+#FPL data from here: (https://aspe.hhs.gov/prior-hhs-poverty-guidelines-and-federal-register-references)
+#read in FPL data
+fpl <- read.csv("FPL.csv", stringsAsFactors = FALSE)
+
+fpl <- fpl %>%
+  filter(Year %in% 2010:2020) %>%
+  rename(iyear=Year, household=Household)
+
+#add merging variable to data
+allexp2$State_Ind <- ifelse(allexp2$mrstate=="HI", "Hawaii",
+                            ifelse(allexp2$mrstate=="AK", "Alaska", "48_States"))
+
+allexp2 <- allexp2 %>%
+  left_join(fpl, by=c("iyear", "State_Ind", "household"))
+
+#calculate income eligibility
+describe(allexp2$income)
+allexp2$income[allexp2$income == 77 | allexp2$income ==99 | 
+                 is.na(allexp2$income) | is.nan(allexp2$income)] <- NA
+
+allexp2$hhincome[allexp2$income==1] <- 9999
+allexp2$hhincome[allexp2$income==2] <- 14999
+allexp2$hhincome[allexp2$income==3] <- 19999
+allexp2$hhincome[allexp2$income==4] <- 24999
+allexp2$hhincome[allexp2$income==5] <- 34999
+allexp2$hhincome[allexp2$income==6] <- 49999
+allexp2$hhincome[allexp2$income==7] <- 74999
+allexp2$hhincome[allexp2$income==8] <- 75000
+describe(allexp2$hhincome)
+
+allexp2$incelig <- ifelse((allexp2$hhincome < allexp2$X138_Poverty), 1, 0)
+describe(allexp2$incelig)
+
+#.......................................................
+# NOTES:
+
+#..............................
+# Code post variable ####
+#..............................
+#Create indicator for post time period, based on real time (no lag)
+allexp2$iYrMnthnum <- as.numeric(allexp2$iYrMnth) 
+allexp2$post <- 0 
+allexp2$post[allexp2$iYrMnth > allexp2$YrMnthofExp] <-1
+table(allexp2$post, allexp2$expansion, useNA = "always")
+
+#create indicator for post time period, based on lag of 1 year
+
+allexp2$postlag <- 0 
+allexp2$postlag[allexp2$expstart100 > allexp2$YrMnthofExp] <-1
+table(allexp2$postlag, allexp2$expansion, useNA = "always")
+
+
+#check numbers in pre/post period
+test <- allexp2 %>%
+  filter(female==1 & agegrp!=10 & (x.state !=66 | x.state !=72 | x.state != 78) &
+           incelig==1)
+table(test$post, test$expansion, useNA = "always")
+
+test <- allexp2 %>%
+  filter(female==1 & agegrp!=10 & (x.state !=66 | x.state !=72 | x.state != 78) &
+           incelig==1 & raceth==3)
+table(test$year, test$female_f, useNA = "always")
+
+table(allexp2$year, allexp2$female_f, useNA = "always")
+
+#..............................
+# Subset data + Output .dta & .sas7bdat ####
+#..............................
+#remove periods from variable names (SAS doesn't allow them)
+allexp3 <- allexp2
+names(allexp3) <- gsub("\\.", "", names(allexp2))
+
+haven::write_sas(allexp3, "ForSAS.sas7bdat")
+haven::write_dta(allexp3, "ForSTATA.dta")
+
+#subset to study population
+# ages 18-64, residing in non-territories, AIAN, income < 138% FPL, female,
+# income eligible for care, no hyst
+export <- allexp3 %>%
+  filter(female==1 & raceth==3 & (xstate !=66 | xstate !=72 | xstate != 78) & 
+           agegrp!=10 & incelig==1 & hyst==0)
+
+haven::write_sas(export, "AIANForSAS.sas7bdat")
+haven::write_dta(export, "AIANForSTATA.dta")
+
+#subset to study population
+# ages 18-64, residing in non-territories, white, income < 138% FPL, female,
+# income eligible for care, no hyst
+white <- allexp3 %>%
+  filter(sex==2 & raceth==1 & (xstate !=66 | xstate !=72 | xstate != 78) & 
+           agegrp!=10 & incelig==1 & hyst==0)
+
+haven::write_sas(white, "WhiteForSAS.sas7bdat")
+haven::write_dta(white, "WhiteForSTATA.dta")
+
+
+#for sensitivity analysis 5 (exclude 18-24)
+noyoungage <- allexp3 %>%
+  filter(female==1 & raceth==3 & (xstate !=66 | xstate !=72 | xstate != 78) & 
+           (agegrp %in% 2:9) & incelig==1 & hyst==0)
+
+haven::write_sas(noyoungage, "noyoungAIANForSAS.sas7bdat")
+haven::write_dta(noyoungage, "noyoungAIANForSTATA.dta")
+
+noyoungage <- allexp3 %>%
+  filter(female==1 & raceth==1 & (xstate !=66 | xstate !=72 | xstate != 78) & 
+           (agegrp %in% 2:9) & incelig==1 & hyst==0)
+
+haven::write_sas(noyoungage, "noyoungWhiteForSAS.sas7bdat")
+haven::write_dta(noyoungage, "noyoungWhiteForSTATA.dta")
+
+
+
+#.......................................................
+# Create design objects - for <138% FPL ####
+#.......................................................
+
+# subset to nonmissing
+sub2 <- c("xstate", "state_f", "xpsu", "xfinalwt", "xststr",
+          "agegrp", "agegrp_f", "raceth", "raceth_f",
+          "female", "female_f", "year", "expansion", 
+          "guideccscreen", "guideccscreen_f", "expan_f", "healthplan",
+          "healthplan_f", "incelig")
+
+pre2 <- allexp3[sub2] 
+nomissallexp2 <- na.omit(pre2) #from 2717123 to 954450
+# big reduction b/c we would have dropped all men due to missing values in
+# pap testing
+# also drops all those residing in territories
+# and those w/ missing income
+
+#break out by year
+nomiss10.2 <- nomissallexp2[which(nomissallexp2$year == 2010),]
+nomiss12.2 <- nomissallexp2[which(nomissallexp2$year == 2012),]
+nomiss14.2 <- nomissallexp2[which(nomissallexp2$year == 2014),]
+nomiss16.2 <- nomissallexp2[which(nomissallexp2$year == 2016),]
+nomiss18.2 <- nomissallexp2[which(nomissallexp2$year == 2018),]
+nomiss20.2 <- nomissallexp2[which(nomissallexp2$year == 2020),]
+
+#2010 - design object
+design.10.2 <- nomiss10.2 %>%
+  as_survey_design(ids=xpsu, weight=xfinalwt, nest=T, strata=xststr,
+                   variables= c(xstate, state_f, expan_f, 
+                                agegrp, agegrp_f, 
+                                raceth, raceth_f,
+                                female, female_f, year, 
+                                healthplan_f,
+                                guideccscreen_f, incelig))
+
+#2012 - design object
+design.12.2 <- nomiss12.2 %>%
+  as_survey_design(ids=xpsu, weight=xfinalwt, nest=T, strata=xststr,
+                   variables= c(xstate, state_f, expan_f, 
+                                agegrp, agegrp_f, 
+                                raceth, raceth_f,
+                                female, female_f, year, 
+                                healthplan_f,
+                                guideccscreen_f, incelig))
+
+#2014 - design object
+design.14.2 <- nomiss14.2 %>%
+  as_survey_design(ids=xpsu, weight=xfinalwt, nest=T, strata=xststr,
+                   variables= c(xstate, state_f, expan_f, 
+                                agegrp, agegrp_f, 
+                                raceth, raceth_f,
+                                female, female_f, year, 
+                                healthplan_f,
+                                guideccscreen_f, incelig))
+
+#2016 - design object
+design.16.2 <- nomiss16.2 %>%
+  as_survey_design(ids=xpsu, weight=xfinalwt, nest=T, strata=xststr,
+                   variables= c(xstate, state_f, expan_f, 
+                                agegrp, agegrp_f, 
+                                raceth, raceth_f,
+                                female, female_f, year, 
+                                healthplan_f,
+                                guideccscreen_f, incelig))
+
+#2018 - design object
+design.18.2 <- nomiss18.2 %>%
+  as_survey_design(ids=xpsu, weight=xfinalwt, nest=T, strata=xststr,
+                   variables= c(xstate, state_f, expan_f, 
+                                agegrp, agegrp_f, 
+                                raceth, raceth_f,
+                                female, female_f, year, 
+                                healthplan_f,
+                                guideccscreen_f, incelig))
+
+#2020 - design object
+design.20.2 <- nomiss20.2 %>%
+  as_survey_design(ids=xpsu, weight=xfinalwt, nest=T, strata=xststr,
+                   variables= c(xstate, state_f, expan_f, 
+                                agegrp, agegrp_f, 
+                                raceth, raceth_f,
+                                female, female_f, year, 
+                                healthplan_f,
+                                guideccscreen_f, incelig))
+
+
+#.......................................................
+# Calc prevalences - by race among low income ####
+#.......................................................
+#subset to females, ages 18-64, AIAN
+
+options(survey.lonely.psu = "adjust")
+
+#10 - prev of AIAN in US
+USaian.10 <- design.10.2 %>%
+  filter(female==1 & agegrp < 10 & raceth==3 & incelig==1) %>%
+  group_by(guideccscreen_f) %>%
+  summarize(prev = survey_mean(na.rm=T, vartype=c("ci", "var", "se", "cv")),
+            count=survey_total(na.rm=T, vartype = "ci"))
+USaian.10$type <- "aian"
+USaian.10$year <- 2010
+
+#10 - prev of white in US
+USwhite.10 <- design.10.2 %>%
+  filter(female==1 & agegrp < 10 & raceth==1 & incelig==1) %>%
+  group_by(guideccscreen_f) %>%
+  summarize(prev = survey_mean(na.rm=T, vartype=c("ci", "var", "se", "cv")),
+            count=survey_total(na.rm=T, vartype = "ci"))
+USwhite.10$type <- "white"
+USwhite.10$year <- 2010
+
+#12 - prev of AIAN in US
+USaian.12 <- design.12.2 %>%
+  filter(female==1 & agegrp < 10 & raceth==3& incelig==1) %>%
+  group_by(guideccscreen_f) %>%
+  summarize(prev = survey_mean(na.rm=T, vartype=c("ci", "var", "se", "cv")),
+            count=survey_total(na.rm=T, vartype = "ci"))
+USaian.12$type <- "aian"
+USaian.12$year <- 2012
+
+#12 - prev of white in US
+USwhite.12 <- design.12.2 %>%
+  filter(female==1 & agegrp < 10 & raceth==1 & incelig==1) %>%
+  group_by(guideccscreen_f) %>%
+  summarize(prev = survey_mean(na.rm=T, vartype=c("ci", "var", "se", "cv")),
+            count=survey_total(na.rm=T, vartype = "ci"))
+USwhite.12$type <- "white"
+USwhite.12$year <- 2012
+
+#14 - prev of AIAN in US
+USaian.14 <- design.14.2 %>%
+  filter(female==1 & agegrp < 10 & raceth==3 & incelig==1) %>%
+  group_by(guideccscreen_f) %>%
+  summarize(prev = survey_mean(na.rm=T, vartype=c("ci", "var", "se", "cv")),
+            count=survey_total(na.rm=T, vartype = "ci"))
+USaian.14$type <- "aian"
+USaian.14$year <- 2014
+
+#14- prev of white in US
+USwhite.14 <- design.14.2 %>%
+  filter(female==1 & agegrp < 10 & raceth==1 & incelig==1) %>%
+  group_by(guideccscreen_f) %>%
+  summarize(prev = survey_mean(na.rm=T, vartype=c("ci", "var", "se", "cv")),
+            count=survey_total(na.rm=T, vartype = "ci"))
+USwhite.14$type <- "white"
+USwhite.14$year <- 2014
+
+#16 - prev of AIAN in US
+USaian.16 <- design.16.2 %>%
+  filter(female==1 & agegrp < 10 & raceth==3 & incelig==1) %>%
+  group_by(guideccscreen_f) %>%
+  summarize(prev = survey_mean(na.rm=T, vartype=c("ci", "var", "se", "cv")),
+            count=survey_total(na.rm=T, vartype = "ci"))
+USaian.16$type <- "aian"
+USaian.16$year <- 2016
+
+#16- prev of white in US
+USwhite.16 <- design.16.2 %>%
+  filter(female==1 & agegrp < 10 & raceth==1 & incelig==1) %>%
+  group_by(guideccscreen_f) %>%
+  summarize(prev = survey_mean(na.rm=T, vartype=c("ci", "var", "se", "cv")),
+            count=survey_total(na.rm=T, vartype = "ci"))
+USwhite.16$type <- "white"
+USwhite.16$year <- 2016
+
+#18 - prev of AIAN in US
+USaian.18 <- design.18.2 %>%
+  filter(female==1 & agegrp < 10 & raceth==3 & incelig==1) %>%
+  group_by(guideccscreen_f) %>%
+  summarize(prev = survey_mean(na.rm=T, vartype=c("ci", "var", "se", "cv")),
+            count=survey_total(na.rm=T, vartype = "ci"))
+USaian.18$type <- "aian"
+USaian.18$year <- 2018
+
+#18  prev of white in US
+USwhite.18 <- design.18.2 %>%
+  filter(female==1 & agegrp < 10 & raceth==1 & incelig==1) %>%
+  group_by(guideccscreen_f) %>%
+  summarize(prev = survey_mean(na.rm=T, vartype=c("ci", "var", "se", "cv")),
+            count=survey_total(na.rm=T, vartype = "ci"))
+USwhite.18$type <- "white"
+USwhite.18$year <- 2018
+
+#20 - prev of AIAN in US
+USaian.20 <- design.20.2 %>%
+  filter(female==1 & agegrp < 10 & raceth==3 & incelig==1) %>%
+  group_by(guideccscreen_f) %>%
+  summarize(prev = survey_mean(na.rm=T, vartype=c("ci", "var", "se", "cv")),
+            count=survey_total(na.rm=T, vartype = "ci"))
+USaian.20$type <- "aian"
+USaian.20$year <- 2020
+
+#20  prev of white in US
+USwhite.20 <- design.20.2 %>%
+  filter(female==1 & agegrp < 10 & raceth==1 & incelig==1) %>%
+  group_by(guideccscreen_f) %>%
+  summarize(prev = survey_mean(na.rm=T, vartype=c("ci", "var", "se", "cv")),
+            count=survey_total(na.rm=T, vartype = "ci"))
+USwhite.20$type <- "white"
+USwhite.20$year <- 2020
+
+
+#..............................
+# Create design objects - for all income levels ####
+#.......................................................
+
+# subset to nonmissing
+sub1 <- c("xstate", "state_f", "xpsu", "xfinalwt", "xststr",
+          "agegrp", "agegrp_f", "raceth", "raceth_f",
+          "female", "female_f", "year", "expansion", 
+          "guideccscreen", "guideccscreen_f", "expan_f", "healthplan",
+          "healthplan_f")
+
+pre1 <- allexp3[sub1] 
+nomissallexp <- na.omit(pre1) #from 2717123 to 1248605
+# big reduction b/c we would have dropped all men due to missing values in
+# pap testing
+# also drops all those residing in territories
+
+#break out by year
+nomiss10 <- nomissallexp[which(nomissallexp$year == 2010),]
+nomiss12 <- nomissallexp[which(nomissallexp$year == 2012),]
+nomiss14 <- nomissallexp[which(nomissallexp$year == 2014),]
+nomiss16 <- nomissallexp[which(nomissallexp$year == 2016),]
+nomiss18 <- nomissallexp[which(nomissallexp$year == 2018),]
+nomiss20 <- nomissallexp[which(nomissallexp$year == 2020),]
+
+#2010 - design object
+design.10 <- nomiss10 %>%
+  as_survey_design(ids=xpsu, weight=xfinalwt, nest=T, strata=xststr,
+                   variables= c(xstate, state_f, expan_f, 
+                                agegrp, agegrp_f, 
+                                raceth, raceth_f,
+                                female, female_f, year, 
+                                healthplan_f,
+                                guideccscreen_f))
+
+
+#2012 - design object
+design.12 <- nomiss12 %>%
+  as_survey_design(ids=xpsu, weight=xfinalwt, nest=T, strata=xststr,
+                   variables= c(xstate, state_f, expan_f, 
+                                agegrp, agegrp_f, 
+                                raceth, raceth_f,
+                                female, female_f, year, 
+                                healthplan_f,
+                                guideccscreen_f))
+
+#2014 - design object
+design.14 <- nomiss14 %>%
+  as_survey_design(ids=xpsu, weight=xfinalwt, nest=T, strata=xststr,
+                   variables= c(xstate, state_f, expan_f, 
+                                agegrp, agegrp_f, 
+                                raceth, raceth_f,
+                                female, female_f, year, 
+                                healthplan_f,
+                                guideccscreen_f))
+
+#2016 - design object
+design.16 <- nomiss16 %>%
+  as_survey_design(ids=xpsu, weight=xfinalwt, nest=T, strata=xststr,
+                   variables= c(xstate, state_f, expan_f, 
+                                agegrp, agegrp_f, 
+                                raceth, raceth_f,
+                                female, female_f, year, 
+                                healthplan_f,
+                                guideccscreen_f))
+
+#2018 - design object
+design.18 <- nomiss18 %>%
+  as_survey_design(ids=xpsu, weight=xfinalwt, nest=T, strata=xststr,
+                   variables= c(xstate, state_f, expan_f, 
+                                agegrp, agegrp_f, 
+                                raceth, raceth_f,
+                                female, female_f, year, 
+                                healthplan_f,
+                                guideccscreen_f))
+
+#2020 - design object
+design.20 <- nomiss20 %>%
+  as_survey_design(ids=xpsu, weight=xfinalwt, nest=T, strata=xststr,
+                   variables= c(xstate, state_f, expan_f, 
+                                agegrp, agegrp_f, 
+                                raceth, raceth_f,
+                                female, female_f, year, 
+                                healthplan_f,
+                                guideccscreen_f))
+
+
+#.......................................................
+# Calc prevalences - by race, all incomes ####
+#.......................................................
+#subset to females, ages 18-44, AIAN
+
+options(survey.lonely.psu = "adjust")
+
+#10 - prev of AIAN in US
+USaian.10 <- design.10 %>%
+  filter(female==1 & agegrp < 6 & raceth==3) %>%
+  group_by(guideccscreen_f) %>%
+  summarize(prev = survey_mean(na.rm=T, vartype=c("ci", "var", "se", "cv")),
+            count=survey_total(na.rm=T, vartype = "ci"))
+USaian.10$type <- "aian"
+USaian.10$year <- 2010
+USaian.10$expan_f <- "none"
+
+#10 - prev of white in US
+USwhite.10 <- design.10 %>%
+  filter(female==1 & agegrp < 6 & raceth==1) %>%
+  group_by(guideccscreen_f) %>%
+  summarize(prev = survey_mean(na.rm=T, vartype=c("ci", "var", "se", "cv")),
+            count=survey_total(na.rm=T, vartype = "ci"))
+USwhite.10$type <- "white"
+USwhite.10$year <- 2010
+USwhite.10$expan_f <- "none"
+
+#12 - prev of AIAN in US
+USaian.12 <- design.12 %>%
+  filter(female==1 & agegrp < 6 & raceth==3) %>%
+  group_by(guideccscreen_f) %>%
+  summarize(prev = survey_mean(na.rm=T, vartype=c("ci", "var", "se", "cv")),
+            count=survey_total(na.rm=T, vartype = "ci"))
+USaian.12$type <- "aian"
+USaian.12$year <- 2012
+USaian.12$expan_f <- "none"
+
+#12 - prev of white in US
+USwhite.12 <- design.12 %>%
+  filter(female==1 & agegrp < 6 & raceth==1) %>%
+  group_by(guideccscreen_f) %>%
+  summarize(prev = survey_mean(na.rm=T, vartype=c("ci", "var", "se", "cv")),
+            count=survey_total(na.rm=T, vartype = "ci"))
+USwhite.12$type <- "white"
+USwhite.12$year <- 2012
+USwhite.12$expan_f <- "none"
+
+#14 - prev of AIAN in US
+USaian.14 <- design.14 %>%
+  filter(female==1 & agegrp < 6 & raceth==3) %>%
+  group_by(guideccscreen_f) %>%
+  summarize(prev = survey_mean(na.rm=T, vartype=c("ci", "var", "se", "cv")),
+            count=survey_total(na.rm=T, vartype = "ci"))
+USaian.14$type <- "aian"
+USaian.14$year <- 2014
+USaian.14$expan_f <- "none"
+
+#14- prev of white in US
+USwhite.14 <- design.14 %>%
+  filter(female==1 & agegrp < 6 & raceth==1) %>%
+  group_by(guideccscreen_f) %>%
+  summarize(prev = survey_mean(na.rm=T, vartype=c("ci", "var", "se", "cv")),
+            count=survey_total(na.rm=T, vartype = "ci"))
+USwhite.14$type <- "white"
+USwhite.14$year <- 2014
+USwhite.14$expan_f <- "none"
+
+#16 - prev of AIAN in US
+USaian.16 <- design.16 %>%
+  filter(female==1 & agegrp < 6 & raceth==3) %>%
+  group_by(guideccscreen_f) %>%
+  summarize(prev = survey_mean(na.rm=T, vartype=c("ci", "var", "se", "cv")),
+            count=survey_total(na.rm=T, vartype = "ci"))
+USaian.16$type <- "aian"
+USaian.16$year <- 2016
+USaian.16$expan_f <- "none"
+
+#16- prev of white in US
+USwhite.16 <- design.16 %>%
+  filter(female==1 & agegrp < 6 & raceth==1) %>%
+  group_by(guideccscreen_f) %>%
+  summarize(prev = survey_mean(na.rm=T, vartype=c("ci", "var", "se", "cv")),
+            count=survey_total(na.rm=T, vartype = "ci"))
+USwhite.16$type <- "white"
+USwhite.16$year <- 2016
+USwhite.16$expan_f <- "none"
+
+#18 - prev of AIAN in US
+USaian.18 <- design.18 %>%
+  filter(female==1 & agegrp < 6 & raceth==3) %>%
+  group_by(guideccscreen_f) %>%
+  summarize(prev = survey_mean(na.rm=T, vartype=c("ci", "var", "se", "cv")),
+            count=survey_total(na.rm=T, vartype = "ci"))
+USaian.18$type <- "aian"
+USaian.18$year <- 2018
+USaian.18$expan_f <- "none"
+
+#18  prev of white in US
+USwhite.18 <- design.18 %>%
+  filter(female==1 & agegrp < 6 & raceth==1) %>%
+  group_by(guideccscreen_f) %>%
+  summarize(prev = survey_mean(na.rm=T, vartype=c("ci", "var", "se", "cv")),
+            count=survey_total(na.rm=T, vartype = "ci"))
+USwhite.18$type <- "white"
+USwhite.18$year <- 2018
+USwhite.18$expan_f <- "none"
+
+
+#20 - prev of AIAN in US
+USaian.20 <- design.20 %>%
+  filter(female==1 & agegrp < 6 & raceth==3) %>%
+  group_by(guideccscreen_f) %>%
+  summarize(prev = survey_mean(na.rm=T, vartype=c("ci", "var", "se", "cv")),
+            count=survey_total(na.rm=T, vartype = "ci"))
+USaian.20$type <- "aian"
+USaian.20$year <- 2020
+USaian.20$expan_f <- "none"
+
+#20  prev of white in US
+USwhite.20 <- design.20 %>%
+  filter(female==1 & agegrp < 6 & raceth==1) %>%
+  group_by(guideccscreen_f) %>%
+  summarize(prev = survey_mean(na.rm=T, vartype=c("ci", "var", "se", "cv")),
+            count=survey_total(na.rm=T, vartype = "ci"))
+USwhite.20$type <- "white"
+USwhite.20$year <- 2020
+USwhite.20$expan_f <- "none"
+
+#.......................................................
+# Calc prevalences - by race & expansion status, low incomes ####
+#.......................................................
+#subset to females, ages 18-44, AIAN
+
+options(survey.lonely.psu = "adjust")
+
+#10 - prev of AIAN in US
+USaian.10exp <- design.10.2 %>%
+  filter(female==1 & agegrp < 6 & raceth==3 & incelig==1) %>%
+  group_by(expan_f, guideccscreen_f) %>%
+  summarize(prev = survey_mean(na.rm=T, vartype=c("ci", "var", "se", "cv")),
+            count=survey_total(na.rm=T, vartype = "ci"))
+USaian.10exp$type <- "aian"
+USaian.10exp$year <- 2010
+
+#10 - prev of white in US
+USwhite.10exp <- design.10.2 %>%
+  filter(female==1 & agegrp < 6 & raceth==1 & incelig==1) %>%
+  group_by(expan_f, guideccscreen_f) %>%
+  summarize(prev = survey_mean(na.rm=T, vartype=c("ci", "var", "se", "cv")),
+            count=survey_total(na.rm=T, vartype = "ci"))
+USwhite.10exp$type <- "white"
+USwhite.10exp$year <- 2010
+
+#12 - prev of AIAN in US
+USaian.12exp <- design.12.2 %>%
+  filter(female==1 & agegrp < 6 & raceth==3 & incelig==1) %>%
+  group_by(expan_f, guideccscreen_f) %>%
+  summarize(prev = survey_mean(na.rm=T, vartype=c("ci", "var", "se", "cv")),
+            count=survey_total(na.rm=T, vartype = "ci"))
+USaian.12exp$type <- "aian"
+USaian.12exp$year <- 2012
+
+#12 - prev of white in US
+USwhite.12exp <- design.12.2 %>%
+  filter(female==1 & agegrp < 6 & raceth==1 & incelig==1) %>%
+  group_by(expan_f, guideccscreen_f) %>%
+  summarize(prev = survey_mean(na.rm=T, vartype=c("ci", "var", "se", "cv")),
+            count=survey_total(na.rm=T, vartype = "ci"))
+USwhite.12exp$type <- "white"
+USwhite.12exp$year <- 2012
+
+#14 - prev of AIAN in US
+USaian.14exp <- design.14.2 %>%
+  filter(female==1 & agegrp < 6 & raceth==3 & incelig==1) %>%
+  group_by(expan_f, guideccscreen_f) %>%
+  summarize(prev = survey_mean(na.rm=T, vartype=c("ci", "var", "se", "cv")),
+            count=survey_total(na.rm=T, vartype = "ci"))
+USaian.14exp$type <- "aian"
+USaian.14exp$year <- 2014
+
+#14- prev of white in US
+USwhite.14exp <- design.14.2 %>%
+  filter(female==1 & agegrp < 6 & raceth==1 & incelig==1) %>%
+  group_by(expan_f, guideccscreen_f) %>%
+  summarize(prev = survey_mean(na.rm=T, vartype=c("ci", "var", "se", "cv")),
+            count=survey_total(na.rm=T, vartype = "ci"))
+USwhite.14exp$type <- "white"
+USwhite.14exp$year <- 2014
+
+#16 - prev of AIAN in US
+USaian.16exp <- design.16.2 %>%
+  filter(female==1 & agegrp < 6 & raceth==3 & incelig==1) %>%
+  group_by(expan_f, guideccscreen_f) %>%
+  summarize(prev = survey_mean(na.rm=T, vartype=c("ci", "var", "se", "cv")),
+            count=survey_total(na.rm=T, vartype = "ci"))
+USaian.16exp$type <- "aian"
+USaian.16exp$year <- 2016
+
+#16- prev of white in US
+USwhite.16exp <- design.16.2 %>%
+  filter(female==1 & agegrp < 6 & raceth==1 & incelig==1) %>%
+  group_by(expan_f, guideccscreen_f) %>%
+  summarize(prev = survey_mean(na.rm=T, vartype=c("ci", "var", "se", "cv")),
+            count=survey_total(na.rm=T, vartype = "ci"))
+USwhite.16exp$type <- "white"
+USwhite.16exp$year <- 2016
+
+#18 - prev of AIAN in US
+USaian.18exp <- design.18.2 %>%
+  filter(female==1 & agegrp < 6 & raceth==3 & incelig==1) %>%
+  group_by(expan_f, guideccscreen_f) %>%
+  summarize(prev = survey_mean(na.rm=T, vartype=c("ci", "var", "se", "cv")),
+            count=survey_total(na.rm=T, vartype = "ci"))
+USaian.18exp$type <- "aian"
+USaian.18exp$year <- 2018
+
+#18  prev of white in US
+USwhite.18exp <- design.18.2 %>%
+  filter(female==1 & agegrp < 6 & raceth==1 & incelig==1) %>%
+  group_by(expan_f, guideccscreen_f) %>%
+  summarize(prev = survey_mean(na.rm=T, vartype=c("ci", "var", "se", "cv")),
+            count=survey_total(na.rm=T, vartype = "ci"))
+USwhite.18exp$type <- "white"
+USwhite.18exp$year <- 2018
+
+#20 - prev of AIAN in US
+USaian.20exp <- design.20.2 %>%
+  filter(female==1 & agegrp < 6 & raceth==3 & incelig==1) %>%
+  group_by(expan_f, guideccscreen_f) %>%
+  summarize(prev = survey_mean(na.rm=T, vartype=c("ci", "var", "se", "cv")),
+            count=survey_total(na.rm=T, vartype = "ci"))
+USaian.20exp$type <- "aian"
+USaian.20exp$year <- 2020
+
+#20  prev of white in US
+USwhite.20exp <- design.20.2 %>%
+  filter(female==1 & agegrp < 6 & raceth==1 & incelig==1) %>%
+  group_by(expan_f, guideccscreen_f) %>%
+  summarize(prev = survey_mean(na.rm=T, vartype=c("ci", "var", "se", "cv")),
+            count=survey_total(na.rm=T, vartype = "ci"))
+USwhite.20exp$type <- "white"
+USwhite.20exp$year <- 2020
+
+#.......................................................
